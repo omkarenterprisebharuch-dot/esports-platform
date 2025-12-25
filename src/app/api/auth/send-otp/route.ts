@@ -9,20 +9,52 @@ import {
   errorResponse,
   serverErrorResponse,
 } from "@/lib/api-response";
+import { 
+  checkRateLimit, 
+  getClientIp, 
+  registerRateLimit,
+  otpRateLimit,
+  rateLimitResponse 
+} from "@/lib/rate-limit";
+import { 
+  registerSchema, 
+  validateWithSchema, 
+  validationErrorResponse 
+} from "@/lib/validations";
 
 /**
  * POST /api/auth/send-otp
  * Send OTP for email verification
+ * Rate limited: 3 registrations per hour, 3 OTPs per 10 minutes
  */
 export async function POST(request: NextRequest) {
   try {
-    const body = await request.json();
-    const { username, email, password } = body;
-
-    // Validate input
-    if (!username || !email || !password) {
-      return errorResponse("Username, email, and password are required");
+    const clientIp = getClientIp(request);
+    
+    // Check registration rate limit (stricter, per hour)
+    const registerLimit = checkRateLimit(clientIp, registerRateLimit);
+    if (!registerLimit.success) {
+      return rateLimitResponse(registerLimit);
     }
+    
+    // Check OTP rate limit (3 OTPs per 10 min)
+    const otpLimit = checkRateLimit(clientIp, otpRateLimit);
+    if (!otpLimit.success) {
+      return rateLimitResponse(otpLimit);
+    }
+
+    const body = await request.json();
+    
+    // Validate input with Zod (using register schema but we only need username, email, password)
+    const validation = validateWithSchema(registerSchema, {
+      ...body,
+      confirmPassword: body.confirmPassword || body.password, // Allow skipping confirm for OTP flow
+    });
+    if (!validation.success) {
+      return validationErrorResponse(validation.error, validation.details);
+    }
+    
+    const { username, email, password } = validation.data;
 
     // Check if email already exists
     const existingEmail = await pool.query(

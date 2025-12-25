@@ -1,12 +1,22 @@
 import { NextRequest } from "next/server";
 import pool, { withTransaction } from "@/lib/db";
-import { getUserFromHeader } from "@/lib/auth";
+import { getUserFromRequest } from "@/lib/auth";
 import {
   successResponse,
   errorResponse,
   unauthorizedResponse,
   serverErrorResponse,
 } from "@/lib/api-response";
+import { z } from "zod";
+import { validateWithSchema, validationErrorResponse, uuidSchema } from "@/lib/validations";
+
+// Schema for tournament registration
+const registerTournamentSchema = z.object({
+  tournament_id: uuidSchema,
+  team_id: uuidSchema.optional(),
+  selected_players: z.array(uuidSchema).optional(),
+  backup_players: z.array(uuidSchema).optional(),
+});
 
 /**
  * POST /api/registrations/register
@@ -14,19 +24,21 @@ import {
  */
 export async function POST(request: NextRequest) {
   try {
-    const authHeader = request.headers.get("authorization");
-    const user = getUserFromHeader(authHeader);
+    const user = getUserFromRequest(request);
 
     if (!user) {
       return unauthorizedResponse();
     }
 
     const body = await request.json();
-    const { tournament_id, team_id, selected_players, backup_players } = body;
-
-    if (!tournament_id) {
-      return errorResponse("Tournament ID is required");
+    
+    // Validate input with Zod
+    const validation = validateWithSchema(registerTournamentSchema, body);
+    if (!validation.success) {
+      return validationErrorResponse(validation.error, validation.details);
     }
+    
+    const { tournament_id, team_id, selected_players, backup_players } = validation.data;
 
     const result = await withTransaction(async (client) => {
       // Get tournament details

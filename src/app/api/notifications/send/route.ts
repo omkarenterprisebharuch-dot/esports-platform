@@ -2,7 +2,19 @@ import { NextRequest } from "next/server";
 import webpush from "web-push";
 import { query, queryOne } from "@/lib/db";
 import { successResponse, errorResponse } from "@/lib/api-response";
-import { getUserFromHeader } from "@/lib/auth";
+import { getUserFromRequest } from "@/lib/auth";
+import { z } from "zod";
+import { validateWithSchema, validationErrorResponse, uuidSchema } from "@/lib/validations";
+
+// Schema for sending notification
+const sendNotificationSchema = z.object({
+  tournamentId: uuidSchema.optional(),
+  userIds: z.array(uuidSchema).optional(),
+  title: z.string().min(1, "Title is required").max(100, "Title must be less than 100 characters"),
+  body: z.string().min(1, "Body is required").max(500, "Body must be less than 500 characters"),
+  url: z.string().url("Invalid URL").optional(),
+  type: z.enum(["general", "room_credentials", "tournament_update", "reminder"]).optional().default("general"),
+});
 
 // Configure web-push with VAPID keys
 webpush.setVapidDetails(
@@ -27,7 +39,7 @@ interface NotificationPayload {
   image?: string;
   tag?: string;
   url?: string;
-  tournamentId?: number;
+  tournamentId?: string;
   type?: string;
   requireInteraction?: boolean;
   actions?: { action: string; title: string }[];
@@ -40,8 +52,7 @@ interface NotificationPayload {
  */
 export async function POST(request: NextRequest) {
   try {
-    const authHeader = request.headers.get("authorization");
-    const user = getUserFromHeader(authHeader);
+    const user = getUserFromRequest(request);
     if (!user) {
       return errorResponse("Authentication required", 401);
     }
@@ -52,19 +63,21 @@ export async function POST(request: NextRequest) {
     }
 
     const body = await request.json();
+    
+    // Validate input with Zod
+    const validation = validateWithSchema(sendNotificationSchema, body);
+    if (!validation.success) {
+      return validationErrorResponse(validation.error, validation.details);
+    }
+    
     const {
       tournamentId,
       userIds,
       title,
       body: notificationBody,
       url,
-      type = "general",
-    } = body;
-
-    // Validate required fields
-    if (!title || !notificationBody) {
-      return errorResponse("Title and body are required", 400);
-    }
+      type,
+    } = validation.data;
 
     // Build notification payload
     const payload: NotificationPayload = {

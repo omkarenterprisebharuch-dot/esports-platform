@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { TournamentWithHost } from "@/types";
 import { useRegistrationCache } from "@/hooks/useRegistrationCache";
+import { secureFetch } from "@/lib/api-client";
 
 export default function DashboardPage() {
   const router = useRouter();
@@ -16,13 +17,10 @@ export default function DashboardPage() {
 
   const fetchTournaments = useCallback(() => {
     setLoading(true);
-    const token = localStorage.getItem("token");
 
     // Handle "registered" filter client-side using cached data
     if (filter === "registered") {
-      fetch("/api/tournaments", {
-        headers: { Authorization: `Bearer ${token}` },
-      })
+      secureFetch("/api/tournaments")
         .then((res) => res.json())
         .then((data) => {
           if (data.success) {
@@ -42,9 +40,7 @@ export default function DashboardPage() {
         ? "/api/tournaments"
         : `/api/tournaments?filter=${filter}`;
 
-    fetch(url, {
-      headers: { Authorization: `Bearer ${token}` },
-    })
+    secureFetch(url)
       .then((res) => res.json())
       .then((data) => {
         if (data.success) {

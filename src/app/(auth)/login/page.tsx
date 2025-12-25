@@ -4,6 +4,7 @@ import { useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { Loader } from "@/components/ui/Loader";
+import { secureFetch, setCachedUser } from "@/lib/api-client";
 
 export default function LoginPage() {
   const router = useRouter();
@@ -17,10 +18,10 @@ export default function LoginPage() {
     setError("");
 
     try {
-      const res = await fetch("/api/auth/login", {
+      const res = await secureFetch("/api/auth/login", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
         body: JSON.stringify(form),
+        skipCsrf: true, // Login doesn't need CSRF (no auth yet)
       });
 
       const data = await res.json();
@@ -29,10 +30,12 @@ export default function LoginPage() {
         throw new Error(data.message || "Login failed");
       }
 
-      // Store token in localStorage and cookie
-      localStorage.setItem("token", data.data.token);
-      localStorage.setItem("user", JSON.stringify(data.data.user));
-      document.cookie = `token=${data.data.token}; path=/; max-age=${7 * 24 * 60 * 60}`;
+      // Cache user data for UI (non-sensitive)
+      setCachedUser(data.data.user);
+
+      // Clear any old localStorage tokens (cleanup)
+      localStorage.removeItem("token");
+      localStorage.removeItem("user");
 
       router.push("/dashboard");
       router.refresh();

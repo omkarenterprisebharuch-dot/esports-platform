@@ -1,7 +1,19 @@
 import { NextRequest } from "next/server";
 import { queryOne, query } from "@/lib/db";
 import { successResponse, errorResponse } from "@/lib/api-response";
-import { getUserFromHeader } from "@/lib/auth";
+import { getUserFromRequest } from "@/lib/auth";
+import { z } from "zod";
+import { validateWithSchema, validationErrorResponse } from "@/lib/validations";
+
+// Schema for push subscription
+const subscribeSchema = z.object({
+  endpoint: z.string().url("Invalid endpoint URL"),
+  p256dh_key: z.string().min(1, "p256dh key is required"),
+  auth_key: z.string().min(1, "auth key is required"),
+  device_type: z.string().max(50).optional(),
+  browser: z.string().max(50).optional(),
+  os: z.string().max(50).optional(),
+});
 
 interface PushSubscription {
   id: string;
@@ -16,19 +28,20 @@ interface PushSubscription {
 export async function POST(request: NextRequest) {
   try {
     // Verify authentication
-    const authHeader = request.headers.get("authorization");
-    const user = getUserFromHeader(authHeader);
+    const user = getUserFromRequest(request);
     if (!user) {
       return errorResponse("Authentication required", 401);
     }
 
     const body = await request.json();
-    const { endpoint, p256dh_key, auth_key, device_type, browser, os } = body;
-
-    // Validate required fields
-    if (!endpoint || !p256dh_key || !auth_key) {
-      return errorResponse("Missing required subscription data", 400);
+    
+    // Validate input with Zod
+    const validation = validateWithSchema(subscribeSchema, body);
+    if (!validation.success) {
+      return validationErrorResponse(validation.error, validation.details);
     }
+    
+    const { endpoint, p256dh_key, auth_key, device_type, browser, os } = validation.data;
 
     // Check if subscription already exists
     const existing = await queryOne<PushSubscription>(
@@ -72,8 +85,7 @@ export async function POST(request: NextRequest) {
  */
 export async function GET(request: NextRequest) {
   try {
-    const authHeader = request.headers.get("authorization");
-    const user = getUserFromHeader(authHeader);
+    const user = getUserFromRequest(request);
     if (!user) {
       return errorResponse("Authentication required", 401);
     }

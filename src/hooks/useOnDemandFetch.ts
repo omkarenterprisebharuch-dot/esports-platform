@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useCallback } from "react";
+import { secureFetch } from "@/lib/api-client";
 
 interface FetchState<T> {
   data: T | null;
@@ -17,6 +18,7 @@ interface UseOnDemandFetchOptions {
 /**
  * Hook for on-demand data fetching - only fetches when user explicitly requests
  * This prevents unnecessary API calls and server load
+ * Uses secure cookie-based auth with CSRF protection
  */
 export function useOnDemandFetch<T>(
   url: string,
@@ -38,10 +40,8 @@ export function useOnDemandFetch<T>(
     setState(prev => ({ ...prev, loading: true, error: null }));
 
     try {
-      const token = typeof window !== 'undefined' ? localStorage.getItem("token") : null;
-      const response = await window.fetch(url, {
-        headers: token ? { Authorization: `Bearer ${token}` } : {},
-      });
+      // Use secureFetch which handles cookies and CSRF automatically
+      const response = await secureFetch(url);
       
       const result = await response.json();
       

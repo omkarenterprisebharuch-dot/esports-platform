@@ -4,22 +4,43 @@ import { generateOTP, storeOTP } from "@/lib/otp";
 import { sendPasswordResetOTPEmail } from "@/lib/email";
 import {
   successResponse,
-  errorResponse,
   serverErrorResponse,
 } from "@/lib/api-response";
+import { 
+  checkRateLimit, 
+  getClientIp, 
+  passwordResetRateLimit, 
+  rateLimitResponse 
+} from "@/lib/rate-limit";
+import { 
+  forgotPasswordSchema, 
+  validateWithSchema, 
+  validationErrorResponse 
+} from "@/lib/validations";
 
 /**
  * POST /api/auth/forgot-password
  * Send OTP for password reset
+ * Rate limited: 3 requests per 30 minutes
  */
 export async function POST(request: NextRequest) {
   try {
-    const body = await request.json();
-    const { email } = body;
-
-    if (!email) {
-      return errorResponse("Email is required");
+    // Rate limiting
+    const clientIp = getClientIp(request);
+    const rateLimitResult = checkRateLimit(clientIp, passwordResetRateLimit);
+    if (!rateLimitResult.success) {
+      return rateLimitResponse(rateLimitResult);
     }
+
+    const body = await request.json();
+    
+    // Validate input with Zod
+    const validation = validateWithSchema(forgotPasswordSchema, body);
+    if (!validation.success) {
+      return validationErrorResponse(validation.error, validation.details);
+    }
+    
+    const { email } = validation.data;
 
     // Check if user exists
     const result = await pool.query(

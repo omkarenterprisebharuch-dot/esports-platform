@@ -1,12 +1,44 @@
 import { NextRequest } from "next/server";
 import pool from "@/lib/db";
-import { getUserFromHeader } from "@/lib/auth";
+import { getUserFromRequest } from "@/lib/auth";
 import {
   successResponse,
   errorResponse,
   unauthorizedResponse,
   serverErrorResponse,
 } from "@/lib/api-response";
+import { z } from "zod";
+import { validateWithSchema, validationErrorResponse } from "@/lib/validations";
+
+// Schema for updating profile
+const updateProfileSchema = z.object({
+  username: z
+    .string()
+    .min(3, "Username must be at least 3 characters")
+    .max(50, "Username must be less than 50 characters")
+    .regex(/^[a-zA-Z0-9_-]+$/, "Username can only contain letters, numbers, underscores, and hyphens")
+    .optional(),
+  full_name: z
+    .string()
+    .max(100, "Full name must be less than 100 characters")
+    .optional(),
+  phone_number: z
+    .string()
+    .max(20, "Phone number must be less than 20 characters")
+    .regex(/^[\d\s\-+()]*$/, "Invalid phone number format")
+    .optional()
+    .or(z.literal("")),
+  in_game_ids: z.record(z.string().max(50)).optional(),
+  avatar_url: z
+    .string()
+    .url("Invalid avatar URL")
+    .optional()
+    .or(z.literal("")),
+}).refine((data) => {
+  return Object.values(data).some(v => v !== undefined);
+}, {
+  message: "At least one field must be provided for update",
+});
 
 /**
  * GET /api/users/profile
@@ -14,8 +46,7 @@ import {
  */
 export async function GET(request: NextRequest) {
   try {
-    const authHeader = request.headers.get("authorization");
-    const user = getUserFromHeader(authHeader);
+    const user = getUserFromRequest(request);
 
     if (!user) {
       return unauthorizedResponse();
@@ -61,15 +92,21 @@ export async function GET(request: NextRequest) {
  */
 export async function PUT(request: NextRequest) {
   try {
-    const authHeader = request.headers.get("authorization");
-    const user = getUserFromHeader(authHeader);
+    const user = getUserFromRequest(request);
 
     if (!user) {
       return unauthorizedResponse();
     }
 
     const body = await request.json();
-    const { username, phone_number, in_game_ids, avatar_url, full_name } = body;
+    
+    // Validate input with Zod
+    const validation = validateWithSchema(updateProfileSchema, body);
+    if (!validation.success) {
+      return validationErrorResponse(validation.error, validation.details);
+    }
+    
+    const { username, phone_number, in_game_ids, avatar_url, full_name } = validation.data;
 
     const updates: string[] = [];
     const values: unknown[] = [];
@@ -114,6 +151,7 @@ export async function PUT(request: NextRequest) {
     }
 
     if (updates.length === 0) {
+      // This shouldn't happen due to Zod validation, but keep as safety
       return errorResponse("No fields to update");
     }
 

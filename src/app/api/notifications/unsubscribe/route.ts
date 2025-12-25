@@ -1,7 +1,7 @@
 import { NextRequest } from "next/server";
 import { query } from "@/lib/db";
 import { successResponse, errorResponse } from "@/lib/api-response";
-import { getUserFromHeader } from "@/lib/auth";
+import { getUserFromRequest } from "@/lib/auth";
 
 /**
  * POST /api/notifications/unsubscribe
@@ -9,8 +9,7 @@ import { getUserFromHeader } from "@/lib/auth";
  */
 export async function POST(request: NextRequest) {
   try {
-    const authHeader = request.headers.get("authorization");
-    const user = getUserFromHeader(authHeader);
+    const user = getUserFromRequest(request);
     if (!user) {
       return errorResponse("Authentication required", 401);
     }

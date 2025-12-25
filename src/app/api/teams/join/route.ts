@@ -1,12 +1,31 @@
 import { NextRequest } from "next/server";
 import pool, { withTransaction } from "@/lib/db";
-import { getUserFromHeader } from "@/lib/auth";
+import { getUserFromRequest } from "@/lib/auth";
 import {
   successResponse,
   errorResponse,
   unauthorizedResponse,
   serverErrorResponse,
 } from "@/lib/api-response";
+import { z } from "zod";
+import { validateWithSchema, validationErrorResponse } from "@/lib/validations";
+
+// Schema for joining a team
+const joinTeamSchema = z.object({
+  invite_code: z
+    .string()
+    .min(1, "Invite code is required")
+    .max(20, "Invalid invite code")
+    .trim(),
+  game_uid: z
+    .string()
+    .min(1, "Game UID is required")
+    .max(50, "Game UID must be less than 50 characters"),
+  game_name: z
+    .string()
+    .min(1, "Game name is required")
+    .max(50, "Game name must be less than 50 characters"),
+});
 
 /**
  * POST /api/teams/join
@@ -14,21 +33,21 @@ import {
  */
 export async function POST(request: NextRequest) {
   try {
-    const authHeader = request.headers.get("authorization");
-    const user = getUserFromHeader(authHeader);
+    const user = getUserFromRequest(request);
 
     if (!user) {
       return unauthorizedResponse();
     }
 
     const body = await request.json();
-    const { invite_code, game_uid, game_name } = body;
-
-    if (!invite_code || !game_uid || !game_name) {
-      return errorResponse(
-        "Invite code, game UID, and game name are required"
-      );
+    
+    // Validate input with Zod
+    const validation = validateWithSchema(joinTeamSchema, body);
+    if (!validation.success) {
+      return validationErrorResponse(validation.error, validation.details);
     }
+    
+    const { invite_code, game_uid, game_name } = validation.data;
 
     const result = await withTransaction(async (client) => {
       // Find team by invite code

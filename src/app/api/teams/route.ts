@@ -1,12 +1,31 @@
 import { NextRequest } from "next/server";
 import pool, { withTransaction } from "@/lib/db";
-import { getUserFromHeader } from "@/lib/auth";
+import { getUserFromRequest } from "@/lib/auth";
 import {
   successResponse,
   errorResponse,
   unauthorizedResponse,
   serverErrorResponse,
 } from "@/lib/api-response";
+import { z } from "zod";
+import { validateWithSchema, validationErrorResponse } from "@/lib/validations";
+
+// Schema for creating a team
+const createTeamSchema = z.object({
+  team_name: z
+    .string()
+    .min(2, "Team name must be at least 2 characters")
+    .max(50, "Team name must be less than 50 characters")
+    .trim(),
+  game_uid: z
+    .string()
+    .min(1, "Game UID is required")
+    .max(50, "Game UID must be less than 50 characters"),
+  game_name: z
+    .string()
+    .min(1, "Game name is required")
+    .max(50, "Game name must be less than 50 characters"),
+});
 
 /**
  * Generate a unique 5-digit team invite code
@@ -21,8 +40,7 @@ function generateTeamCode(): string {
  */
 export async function GET(request: NextRequest) {
   try {
-    const authHeader = request.headers.get("authorization");
-    const user = getUserFromHeader(authHeader);
+    const user = getUserFromRequest(request);
 
     if (!user) {
       return unauthorizedResponse();
@@ -62,21 +80,21 @@ export async function GET(request: NextRequest) {
  */
 export async function POST(request: NextRequest) {
   try {
-    const authHeader = request.headers.get("authorization");
-    const user = getUserFromHeader(authHeader);
+    const user = getUserFromRequest(request);
 
     if (!user) {
       return unauthorizedResponse();
     }
 
     const body = await request.json();
-    const { team_name, game_uid, game_name } = body;
-
-    if (!team_name || !game_uid || !game_name) {
-      return errorResponse(
-        "Team name, game UID, and game name are required"
-      );
+    
+    // Validate input with Zod
+    const validation = validateWithSchema(createTeamSchema, body);
+    if (!validation.success) {
+      return validationErrorResponse(validation.error, validation.details);
     }
+    
+    const { team_name, game_uid, game_name } = validation.data;
 
     const result = await withTransaction(async (client) => {
       // Generate unique team code

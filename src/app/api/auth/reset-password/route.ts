@@ -7,23 +7,51 @@ import {
   errorResponse,
   serverErrorResponse,
 } from "@/lib/api-response";
+import { 
+  checkRateLimit, 
+  getClientIp, 
+  loginRateLimit, 
+  rateLimitResponse 
+} from "@/lib/rate-limit";
+import { z } from "zod";
+import { 
+  emailSchema, 
+  otpSchema, 
+  passwordSchema,
+  validateWithSchema, 
+  validationErrorResponse 
+} from "@/lib/validations";
+
+// Schema for reset password (email + otp + newPassword)
+const resetPasswordWithOtpSchema = z.object({
+  email: emailSchema,
+  otp: otpSchema,
+  newPassword: passwordSchema,
+});
 
 /**
  * POST /api/auth/reset-password
  * Reset password after OTP verification
+ * Rate limited: 5 attempts per 15 minutes
  */
 export async function POST(request: NextRequest) {
   try {
+    // Rate limiting (same as login - prevents brute force)
+    const clientIp = getClientIp(request);
+    const rateLimitResult = checkRateLimit(clientIp, loginRateLimit);
+    if (!rateLimitResult.success) {
+      return rateLimitResponse(rateLimitResult);
+    }
+
     const body = await request.json();
-    const { email, otp, newPassword } = body;
-
-    if (!email || !otp || !newPassword) {
-      return errorResponse("Email, OTP, and new password are required");
+    
+    // Validate input with Zod
+    const validation = validateWithSchema(resetPasswordWithOtpSchema, body);
+    if (!validation.success) {
+      return validationErrorResponse(validation.error, validation.details);
     }
-
-    if (newPassword.length < 6) {
-      return errorResponse("Password must be at least 6 characters");
-    }
+    
+    const { email, otp, newPassword } = validation.data;
 
     // Verify OTP
     const verification = verifyOTP(email, otp);

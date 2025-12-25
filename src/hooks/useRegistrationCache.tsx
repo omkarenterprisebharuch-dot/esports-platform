@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect, useCallback, createContext, useContext, ReactNode } from "react";
+import { secureFetch, isAuthenticated } from "@/lib/api-client";
 
 interface RegistrationCacheContextType {
   /** Set of tournament IDs the user is registered for */
@@ -38,8 +39,8 @@ export function RegistrationCacheProvider({ children }: { children: ReactNode })
   const [fetched, setFetched] = useState(cacheFetched);
 
   const fetchRegistrationIds = useCallback(async (forceRefresh = false) => {
-    const token = localStorage.getItem("token");
-    if (!token) {
+    // Check if user is authenticated via cookie
+    if (!isAuthenticated()) {
       setRegisteredIds(new Set());
       setLoading(false);
       setFetched(true);
@@ -58,9 +59,8 @@ export function RegistrationCacheProvider({ children }: { children: ReactNode })
     setLoading(true);
 
     try {
-      const response = await fetch("/api/registrations/my-registrations?fields=tournament_id", {
-        headers: { Authorization: `Bearer ${token}` },
-      });
+      // Use secureFetch which handles cookies automatically
+      const response = await secureFetch("/api/registrations/my-registrations?fields=tournament_id");
       const data = await response.json();
 
       if (data.success) {

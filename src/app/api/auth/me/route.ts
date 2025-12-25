@@ -1,6 +1,6 @@
 import { NextRequest } from "next/server";
 import pool from "@/lib/db";
-import { getUserFromHeader } from "@/lib/auth";
+import { getUserFromRequest } from "@/lib/auth";
 import {
   successResponse,
   unauthorizedResponse,
@@ -13,8 +13,7 @@ import {
  */
 export async function GET(request: NextRequest) {
   try {
-    const authHeader = request.headers.get("authorization");
-    const tokenUser = getUserFromHeader(authHeader);
+    const tokenUser = getUserFromRequest(request);
 
     if (!tokenUser) {
       return unauthorizedResponse();

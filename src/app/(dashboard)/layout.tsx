@@ -7,6 +7,7 @@ import Image from "next/image";
 import dynamic from "next/dynamic";
 import { LoaderProvider, Loader, NavigationLoader } from "@/components/ui/Loader";
 import { RegistrationCacheProvider } from "@/hooks/useRegistrationCache";
+import { api, logout, isAuthenticated } from "@/lib/api-client";
 
 // Lazy load notification prompt - not critical for initial render
 const NotificationPrompt = dynamic(
@@ -50,8 +51,8 @@ export default function DashboardLayout({
   const fetchedRef = useRef(false);
 
   const fetchUserData = useCallback(async (forceRefresh = false) => {
-    const token = localStorage.getItem("token");
-    if (!token) {
+    // Check if user is authenticated via cookie
+    if (!isAuthenticated()) {
       router.push("/login");
       return;
     }
@@ -66,39 +67,28 @@ export default function DashboardLayout({
     }
 
     try {
-      // Fetch user and teams in parallel
-      const [userRes, teamsRes] = await Promise.all([
-        fetch("/api/auth/me", {
-          headers: { Authorization: `Bearer ${token}` },
-        }),
-        fetch("/api/teams/my-teams", {
-          headers: { Authorization: `Bearer ${token}` },
-        }),
-      ]);
-
+      // Fetch user and teams in parallel using secure API client
       const [userData, teamsData] = await Promise.all([
-        userRes.json(),
-        teamsRes.json(),
+        api<User>("/api/auth/me"),
+        api<{ teams: unknown[] }>("/api/teams/my-teams"),
       ]);
 
-      if (userData.success) {
+      if (userData.success && userData.data) {
         cachedUser = userData.data;
         cacheTimestamp = Date.now();
         setUser(userData.data);
       } else {
-        localStorage.removeItem("token");
         cachedUser = null;
         router.push("/login");
         return;
       }
 
-      if (teamsData.success) {
+      if (teamsData.success && teamsData.data) {
         const count = teamsData.data.teams?.length || 0;
         cachedTeamsCount = count;
         setTeamsCount(count);
       }
     } catch {
-      localStorage.removeItem("token");
       cachedUser = null;
       router.push("/login");
     } finally {
@@ -122,15 +112,13 @@ export default function DashboardLayout({
     fetchUserData();
   }, [fetchUserData]);
 
-  const handleLogout = () => {
-    localStorage.removeItem("token");
-    localStorage.removeItem("user");
-    document.cookie = "token=; path=/; expires=Thu, 01 Jan 1970 00:00:00 GMT";
+  const handleLogout = async () => {
     // Clear cache
     cachedUser = null;
     cachedTeamsCount = 0;
     cacheTimestamp = 0;
-    router.push("/login");
+    // Use secure logout (clears httpOnly cookies server-side and redirects)
+    await logout();
   };
 
   const isAdminOrHost = user?.is_admin === true || user?.is_host === true;

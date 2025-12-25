@@ -8,19 +8,41 @@ import {
   errorResponse,
   serverErrorResponse,
 } from "@/lib/api-response";
+import { 
+  checkRateLimit, 
+  getClientIp, 
+  loginRateLimit, 
+  rateLimitResponse 
+} from "@/lib/rate-limit";
+import { 
+  verifyOtpSchema, 
+  validateWithSchema, 
+  validationErrorResponse 
+} from "@/lib/validations";
 
 /**
  * POST /api/auth/verify-otp
  * Verify OTP and complete registration
+ * Rate limited: 5 attempts per 15 minutes
  */
 export async function POST(request: NextRequest) {
   try {
-    const body = await request.json();
-    const { email, otp } = body;
-
-    if (!email || !otp) {
-      return errorResponse("Email and OTP are required");
+    // Rate limiting (same as login - prevents brute force)
+    const clientIp = getClientIp(request);
+    const rateLimitResult = checkRateLimit(clientIp, loginRateLimit);
+    if (!rateLimitResult.success) {
+      return rateLimitResponse(rateLimitResult);
     }
+
+    const body = await request.json();
+    
+    // Validate input with Zod
+    const validation = validateWithSchema(verifyOtpSchema, body);
+    if (!validation.success) {
+      return validationErrorResponse(validation.error, validation.details);
+    }
+    
+    const { email, otp } = validation.data;
 
     // Verify OTP
     const verification = verifyOTP(email, otp);
